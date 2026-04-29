@@ -657,5 +657,5 @@ async def rank_check_loop():
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    print("🌐 Flask sunucusu port 5000'de başlatıldı!")
+    print("🌐 Flask sunucusu port 5000'de başlatıldı! güncelleme 2")
     bot.run(TOKEN)
