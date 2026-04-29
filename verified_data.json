@@ -1,0 +1,22 @@
+{
+  "verified_users": [
+    1489983402370400410,
+    1172967739862823035
+  ],
+  "verified_roblox": [
+    "babapiro191974",
+    "friends074"
+  ],
+  "user_roblox_map": {
+    "1172967739862823035": {
+      "roblox_id": 859140212,
+      "roblox_username": "friends074",
+      "current_rank_name": "Baş Developer"
+    },
+    "1489983402370400410": {
+      "roblox_id": 9661798773,
+      "roblox_username": "babapiro191974",
+      "current_rank_name": "OF-10 Mareşal"
+    }
+  }
+}
