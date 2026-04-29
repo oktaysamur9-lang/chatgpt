@@ -525,7 +525,7 @@ async def verify(interaction: discord.Interaction, roblox_kullanici_adi: str):
     print(f"[Bot] Verify baslatildi: {discord_username} -> {roblox_kullanici_adi}")
 
     await interaction.followup.send(
-        f"🔍 **{roblox_kullanici_adi}** için doğrulama bekleniyor... Roblox oyununa gir!",
+        f"🔍 **{roblox_kullanici_adi}** için doğrulama bekleniyor... Roblox oyununa gir! Roblox oyunu: https://www.roblox.com/tr/games/130926747712224/TTC-I-Verify",
         ephemeral=True
     )
 
