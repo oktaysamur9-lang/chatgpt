@@ -97,14 +97,11 @@ def verify_response():
     return jsonify({"status": "ok"})
     
 def run_flask():
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     
-    # Railway otomatik public URL verir
     railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     if railway_url:
         print(f"🌐 Public URL: https://{railway_url}")
-    else:
-        print(f"🌐 Local: http://0.0.0.0:{port}")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
     
