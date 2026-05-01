@@ -100,7 +100,7 @@ def run_flask():
     from pyngrok import ngrok
     port = int(os.environ.get("PORT", 5000))
     
-    ngrok_token = os.environ.get("35Nu8Mgi5cxP2RkCWW11WcfcEZ7_3mpr9YpDT7QaM2dnmfKTw")
+    ngrok_token = os.environ.get("NGROK_TOKEN")
     if ngrok_token:
         ngrok.set_auth_token(ngrok_token)
     
@@ -108,7 +108,7 @@ def run_flask():
     print(f"🌐 ngrok URL: {tunnel.public_url}")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-
+    
 # ==================== ROBLOX API ====================
 async def get_roblox_user_id(username: str):
     async with aiohttp.ClientSession() as session:
