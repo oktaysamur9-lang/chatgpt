@@ -32,7 +32,6 @@ user_roblox_map = {}
 KAYIT_DOSYASI = "verified_data.json"
 
 def veriyi_yukle():
-    """Bot başlarken JSON dosyasından verileri yükler."""
     global verified_users, verified_roblox, user_roblox_map
     try:
         import os
@@ -49,7 +48,6 @@ def veriyi_yukle():
         print(f"[Kayıt] ❌ Yükleme hatası: {e}")
 
 def veriyi_kaydet():
-    """Değişiklik olduğunda JSON dosyasına yazar."""
     try:
         data = {
             "verified_users":  list(verified_users),
@@ -62,11 +60,9 @@ def veriyi_kaydet():
     except Exception as e:
         print(f"[Kayıt] ❌ Kaydetme hatası: {e}")
 
-# Başlangıçta yükle
 veriyi_yukle()
 
 # ==================== BOT BAŞLATMA ====================
-# bot buraya taşındı — tüm @bot.tree.command dekoratörlerinden ÖNCE olması şart
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -124,6 +120,7 @@ def run_flask():
         print(f"🌐 Public URL: https://{railway_url}")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
 # ==================== ROBLOX API ====================
 async def get_roblox_user_id(username: str):
     async with aiohttp.ClientSession() as session:
@@ -150,7 +147,6 @@ async def get_group_rank(roblox_user_id: int):
     return None
 
 async def get_roblox_full_info(roblox_user_id: int):
-    """Roblox kullanıcısının tüm bilgilerini çeker."""
     info = {
         "display_name": "?",
         "username": "?",
@@ -160,7 +156,6 @@ async def get_roblox_full_info(roblox_user_id: int):
         "friend_count": 0,
     }
     async with aiohttp.ClientSession() as session:
-        # Kullanıcı profili
         async with session.get(f"https://users.roblox.com/v1/users/{roblox_user_id}") as resp:
             if resp.status == 200:
                 data = await resp.json()
@@ -169,7 +164,6 @@ async def get_roblox_full_info(roblox_user_id: int):
                 info["created"] = data.get("created")
                 info["is_banned"] = data.get("isBanned", False)
 
-        # Avatar (headshot)
         async with session.get(
             f"https://thumbnails.roblox.com/v1/users/avatar-headshot"
             f"?userIds={roblox_user_id}&size=420x420&format=Png"
@@ -179,7 +173,6 @@ async def get_roblox_full_info(roblox_user_id: int):
                 if thumb.get("data"):
                     info["avatar_url"] = thumb["data"][0].get("imageUrl")
 
-        # Arkadaş sayısı
         async with session.get(
             f"https://friends.roblox.com/v1/users/{roblox_user_id}/friends/count"
         ) as resp:
@@ -189,10 +182,67 @@ async def get_roblox_full_info(roblox_user_id: int):
 
     return info
 
+# ==================== ASKERİ GRUP KONTROLÜ ====================
+# Askeri gruplara işaret eden anahtar kelimeler (büyük-küçük harf duyarsız)
+MILITARY_KEYWORDS = [
+    "military", "army", "ordu", "asker", "askeri", "taktik", "tactical",
+    "corps", "kolordu", "komando", "commando", "brigade", "tugay",
+    "legion", "lejyon", "forces", "kuvvet", "division", "tümen",
+    "battalion", "tabur", "regiment", "alay", "squad", "manga",
+    "platoon", "takım", "special forces", "özel kuvvet", "warfare",
+    "savaş", "combat", "muharebe", "infantry", "piyade", "guard",
+    "muhafız", "defense", "savunma", "nato", "military rp", "silahlı"
+]
+
+async def check_military_groups(roblox_user_id: int):
+    """
+    Kullanıcının grup üyeliklerini kontrol eder.
+    Dönüş:
+      ("hidden", [])          → topluluklar gizlenmiş
+      ("found", [grup_adları]) → askeri grup bulundu
+      ("clean", [])           → askeri grup yok
+    """
+    # Önce RoProxy, sonra resmi Roblox API dene
+    urls = [
+        f"https://groups.roproxy.com/v2/users/{roblox_user_id}/groups/roles",
+        f"https://groups.roblox.com/v2/users/{roblox_user_id}/groups/roles",
+    ]
+
+    groups_data = None
+    async with aiohttp.ClientSession() as session:
+        for url in urls:
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        groups_data = payload.get("data", [])
+                        break
+                    elif resp.status == 403:
+                        # Gruplar gizlenmiş
+                        return ("hidden", [])
+            except Exception:
+                continue
+
+    if groups_data is None:
+        # API'ye ulaşılamadı — güvenli tarafta kal
+        return ("hidden", [])
+
+    military_found = []
+    for entry in groups_data:
+        group_name = entry.get("group", {}).get("name", "")
+        name_lower = group_name.lower()
+        for kw in MILITARY_KEYWORDS:
+            if kw in name_lower:
+                military_found.append(group_name)
+                break  # Aynı grubu iki kez ekleme
+
+    if military_found:
+        return ("found", military_found)
+    return ("clean", [])
+
 # ==================== YARDIMCI FONKSIYONLAR ====================
 import re as _re
 
-# OF-6 rolünün tam adı — hiyerarşi karşılaştırması için referans nokta
 OF6_ROL_ADI = "OF-6 Tuğgeneral"
 
 def extract_of_level(role_name: str):
@@ -203,16 +253,10 @@ def extract_of_level(role_name: str):
     return None
 
 def get_of6_position(guild: discord.Guild) -> int:
-    """Sunucuda OF-6 rolünün pozisyonunu döner."""
     role = discord.utils.get(guild.roles, name=OF6_ROL_ADI)
     return role.position if role else 0
 
 def has_required_rank(member: discord.Member) -> bool:
-    """
-    OF-6 rolünün Discord hiyerarşisindeki pozisyonundan
-    YÜKSEK veya EŞİT pozisyonda en az bir rolü olan herkes geçer.
-    Baş Developer, Admin vb. tüm üst roller otomatik dahil olur.
-    """
     of6_pos = get_of6_position(member.guild)
     for role in member.roles:
         if role.name == "@everyone":
@@ -222,14 +266,12 @@ def has_required_rank(member: discord.Member) -> bool:
     return False
 
 def get_member_rank_name(member: discord.Member) -> str:
-    """Kullanıcının en yüksek rolünü döner."""
     roles = [r for r in member.roles if r.name != "@everyone"]
     if not roles:
         return "Bilinmiyor"
     return max(roles, key=lambda r: r.position).name
 
 def debug_roles(member: discord.Member) -> str:
-    """Erişim reddedilince rol pozisyonlarını gösterir."""
     of6_pos = get_of6_position(member.guild)
     lines = [f"*(OF-6 Tuğgeneral pozisyonu: {of6_pos})*"]
     for role in sorted(member.roles, key=lambda r: r.position, reverse=True):
@@ -242,7 +284,6 @@ def debug_roles(member: discord.Member) -> str:
     return "\n".join(lines) if lines else "(hiç rol bulunamadı)"
 
 def calculate_age(created_iso: str):
-    """ISO tarihinden hesap yaşını hesaplar."""
     try:
         created_dt = datetime.fromisoformat(created_iso.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
@@ -256,10 +297,6 @@ def calculate_age(created_iso: str):
         return None, 0, 0, 0, 0
 
 def age_tier(total_days: int):
-    """
-    Hesap yaşına göre güven seviyesi döner.
-    Dönüş: (emoji_bar, etiket, renk_hex)
-    """
     if total_days < 30:
         return ("🔴🔴🔴🔴🔴", "ŞÜPHELI — Çok Yeni", 0xFF2222)
     elif total_days < 90:
@@ -276,7 +313,6 @@ def age_tier(total_days: int):
         return ("👑👑👑👑👑", "EFSANEVİ — 4+ Yıllık", 0xFFD700)
 
 def build_age_bar(total_days: int) -> str:
-    """Görsel progress bar (30 gün birimleriyle, max 5 yıl)."""
     max_days = 365 * 5
     filled = min(int((total_days / max_days) * 10), 10)
     bar = "█" * filled + "░" * (10 - filled)
@@ -329,8 +365,13 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
     roblox_username = data["roblox_username"]
     current_rank    = data.get("current_rank_name") or "Grupta Değil"
 
-    # Roblox API'den detaylı bilgi al
-    info = await get_roblox_full_info(roblox_id)
+    # Roblox API ve askeri grup kontrolünü paralel çalıştır
+    info, mil_result = await asyncio.gather(
+        get_roblox_full_info(roblox_id),
+        check_military_groups(roblox_id)
+    )
+
+    mil_status, mil_groups = mil_result
 
     # Hesap yaşı hesapla
     created_dt, total_days, years, months, days_rem = calculate_age(info["created"] or "")
@@ -351,96 +392,93 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
     if days_rem > 0 or not age_parts: age_parts.append(f"{days_rem} gün")
     age_str = " · ".join(age_parts)
 
-    # Banlı mı?
-    banned_field = "```\n⚠️  HESAP BANLANDI\n```" if info["is_banned"] else ""
+    # ── Askeri grup alanı metni ──────────────────────────────────
+    if mil_status == "hidden":
+        mil_field_value = "🔒 Kullanıcı topluluklarını gizlemiş"
+    elif mil_status == "found":
+        # Kırmızı kalın yazı için Discord'da kırmızı embed rengi + uyarı sembolü kullanıyoruz.
+        # Discord mesaj formatlama kırmızı renk desteklemez; sembol + embed üst rengini kırmızıya çekiyoruz.
+        group_list = ", ".join(mil_groups[:5])  # max 5 grup göster
+        mil_field_value = f"⚠️ **EVET VAR** — `{group_list}`"
+        embed_color = 0xFF2222  # Embed rengini kırmızıya çek
+    else:
+        mil_field_value = "✅ Hayır, yok."
 
-    # ── 4. EMBED OLUŞTUR ────────────────────────────────────────
+    # ── 4. EMBED OLUŞTUR (YENİ TASARIM) ────────────────────────
     embed = discord.Embed(
         color=embed_color,
         timestamp=datetime.now(timezone.utc)
     )
 
-    # BAŞLIK BLOĞU
-    embed.set_author(
-        name=f"📂  PERSONİK DOSYA  ·  GİZLİ",
-        icon_url="https://i.imgur.com/4M34hi2.png"
-    )
-
-    embed.title = (
-        f"🪖  {roblox_username}"
-        + (f"  ›  {info['display_name']}" if info['display_name'] != roblox_username else "")
-    )
-
-    embed.description = (
-        f"{'⚠️  **BU HESAP ROBLOX TARAFINDAN BANLANMIŞTIR!**' + chr(10) if info['is_banned'] else ''}"
-        f"```ml\n"
-        f"  DOSYA NO   : RBX-{roblox_id}\n"
-        f"  DURUM      : {'❌ BANLI' if info['is_banned'] else '✅ AKTİF'}\n"
-        f"  KAYIT      : {created_fmt}\n"
-        f"```"
-    )
-
-    # ROBLOX BİLGİLERİ
-    embed.add_field(
-        name="👤  ROBLOX KİMLİĞİ",
-        value=(
-            f"```\n"
-            f"Kullanıcı Adı : {info['username']}\n"
-            f"Görünen Ad    : {info['display_name']}\n"
-            f"Kullanıcı ID  : {roblox_id}\n"
-            f"Arkadaş       : {info['friend_count']:,}\n"
-            f"```"
-        ),
-        inline=False
-    )
-
-    # HESAP YAŞI BLOĞU
-    embed.add_field(
-        name="📅  HESAP YAŞI VE GÜVENİLİRLİK",
-        value=(
-            f"{progress_bar}  **{age_str}**\n"
-            f"{age_bar_str}\n"
-            f"**Sınıflandırma:** `{age_label}`\n"
-            f"**Kayıt Tarihi:** {created_ts}"
-        ),
-        inline=False
-    )
-
-    # GRUP & DISCORD BİLGİSİ
-    embed.add_field(
-        name="🎖️  GRUP & DISCORD",
-        value=(
-            f"```\n"
-            f"Grup Rütbesi  : {current_rank}\n"
-            f"Discord Nick  : {kullanici.display_name}\n"
-            f"Discord Tag   : {kullanici}\n"
-            f"```"
-        ),
-        inline=True
-    )
-
-    # KONTROL YAPAN BLOK
-    invoker_rank = get_member_rank_name(interaction.user)
-    embed.add_field(
-        name="🔎  SORGULAYAN YETKİLİ",
-        value=(
-            f"```\n"
-            f"İsim    : {interaction.user.display_name}\n"
-            f"Rütbe   : {invoker_rank}\n"
-            f"```"
-        ),
-        inline=True
-    )
-
-    # Avatar
+    # Sol tarafta BÜYÜK profil fotoğrafı — Discord'da "image" sol-alt köşeye,
+    # "thumbnail" sağ-üst köşeye gider. Büyük fotoğraf için set_image kullanıyoruz
+    # ama önce thumbnail ile büyük bir görsel effect yaratıyoruz.
+    # Discord embed'de gerçek "sol büyük" düzeni yoktur; en yakın yöntem:
+    # thumbnail (sağ üst, görece büyük) + başlık solda
     if info["avatar_url"]:
         embed.set_thumbnail(url=info["avatar_url"])
 
-    # Discord avatarı (küçük resim)
-    embed.set_image(url=None)  # Gerekirse büyük görsel eklenebilir
+    # BAŞLIK — Kullanıcı adı
+    display_part = f" `›` {info['display_name']}" if info['display_name'] != roblox_username else ""
+    embed.title = f"🪖 {roblox_username}{display_part}"
+
+    # Banlı uyarısı
+    ban_line = "\n> ⚠️ **BU HESAP ROBLOX TARAFINDAN BANLANMIŞTIR!**\n" if info["is_banned"] else ""
+
+    # Hesap yaşı — başlığın hemen altında
+    embed.description = (
+        f"{ban_line}"
+        f"**Hesap Yaşı:** {age_str}  {age_bar_str}\n"
+        f"{progress_bar} `{age_label}`\n"
+        f"**Kayıt Tarihi:** {created_ts}\n\n"
+        f"**Başka asker gruplarında var mı:** {mil_field_value}"
+    )
+
+    # ROBLOX KİMLİĞİ (inline — sol sütun)
+    embed.add_field(
+        name="👤 Roblox Kimliği",
+        value=(
+            f"**Kullanıcı:** {info['username']}\n"
+            f"**Görünen Ad:** {info['display_name']}\n"
+            f"**ID:** `{roblox_id}`\n"
+            f"**Arkadaş:** {info['friend_count']:,}\n"
+            f"**Durum:** {'❌ Banlı' if info['is_banned'] else '✅ Aktif'}"
+        ),
+        inline=True
+    )
+
+    # GRUP & DISCORD (inline — sağ sütun)
+    embed.add_field(
+        name="🎖️ Grup & Discord",
+        value=(
+            f"**Grup Rütbesi:** {current_rank}\n"
+            f"**Discord:** {kullanici.display_name}\n"
+            f"**Tag:** `{kullanici}`"
+        ),
+        inline=True
+    )
+
+    # Boş sütun (3'lü grid için hizalama)
+    embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+    # SORGULAYAN YETKİLİ
+    invoker_rank = get_member_rank_name(interaction.user)
+    embed.add_field(
+        name="🔎 Sorgulayan Yetkili",
+        value=(
+            f"**İsim:** {interaction.user.display_name}\n"
+            f"**Rütbe:** {invoker_rank}"
+        ),
+        inline=True
+    )
+
+    embed.set_author(
+        name="📂 PERSONİK DOSYA · GİZLİ",
+        icon_url="https://i.imgur.com/4M34hi2.png"
+    )
 
     embed.set_footer(
-        text=f"TTC Personik Kayıt Sistemi  ·  Roblox ID: {roblox_id}",
+        text=f"TTC Personik Kayıt Sistemi · Roblox ID: {roblox_id}",
         icon_url=kullanici.display_avatar.url
     )
 
@@ -460,14 +498,12 @@ class KontrolView(discord.ui.View):
         self.roblox_username = roblox_username
         self.roblox_id = roblox_id
 
-        # Roblox profil linki butonu
         self.add_item(discord.ui.Button(
             label="Roblox Profili",
             emoji="🔗",
             style=discord.ButtonStyle.link,
             url=f"https://www.roblox.com/users/{roblox_id}/profile"
         ))
-        # Roblox gruba git butonu
         self.add_item(discord.ui.Button(
             label="Grubu Görüntüle",
             emoji="🏛️",
@@ -499,7 +535,7 @@ class KontrolView(discord.ui.View):
         )
 
 
-# ==================== DISCORD BOT (on_ready ve diğer eventlar) ====================
+# ==================== DISCORD BOT ====================
 @bot.event
 async def on_ready():
     guild = discord.Object(id=SUNUCU_ID)
@@ -682,5 +718,5 @@ async def rank_check_loop():
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    print("🌐 Flask sunucusu port 5000'de başlatıldı! güncelleme 3")
+    print("🌐 Flask sunucusu başlatıldı!")
     bot.run(TOKEN)
