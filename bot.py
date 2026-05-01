@@ -34,7 +34,6 @@ KAYIT_DOSYASI = "verified_data.json"
 def veriyi_yukle():
     global verified_users, verified_roblox, user_roblox_map
     try:
-        import os
         if not os.path.exists(KAYIT_DOSYASI):
             print("[Kayıt] verified_data.json bulunamadı, boş başlatılıyor.")
             return
@@ -109,16 +108,14 @@ def verify_response():
         return jsonify({"status": "error"}), 400
     verified_results[code] = {"result": result, "roblox_username": roblox_username}
     return jsonify({"status": "ok"})
-    
+
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     print(f"🔧 PORT env değeri: {os.environ.get('PORT', 'TANIMSIZ')}")
     print(f"🔧 Flask {port} portunda başlıyor...")
-    
     railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     if railway_url:
         print(f"🌐 Public URL: https://{railway_url}")
-    
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # ==================== ROBLOX API ====================
@@ -183,7 +180,6 @@ async def get_roblox_full_info(roblox_user_id: int):
     return info
 
 # ==================== ASKERİ GRUP KONTROLÜ ====================
-# Askeri gruplara işaret eden anahtar kelimeler (büyük-küçük harf duyarsız)
 MILITARY_KEYWORDS = [
     "military", "army", "ordu", "asker", "askeri", "taktik", "tactical",
     "corps", "kolordu", "komando", "commando", "brigade", "tugay",
@@ -195,14 +191,6 @@ MILITARY_KEYWORDS = [
 ]
 
 async def check_military_groups(roblox_user_id: int):
-    """
-    Kullanıcının grup üyeliklerini kontrol eder.
-    Dönüş:
-      ("hidden", [])          → topluluklar gizlenmiş
-      ("found", [grup_adları]) → askeri grup bulundu
-      ("clean", [])           → askeri grup yok
-    """
-    # Önce RoProxy, sonra resmi Roblox API dene
     urls = [
         f"https://groups.roproxy.com/v2/users/{roblox_user_id}/groups/roles",
         f"https://groups.roblox.com/v2/users/{roblox_user_id}/groups/roles",
@@ -218,13 +206,11 @@ async def check_military_groups(roblox_user_id: int):
                         groups_data = payload.get("data", [])
                         break
                     elif resp.status == 403:
-                        # Gruplar gizlenmiş
                         return ("hidden", [])
             except Exception:
                 continue
 
     if groups_data is None:
-        # API'ye ulaşılamadı — güvenli tarafta kal
         return ("hidden", [])
 
     military_found = []
@@ -234,7 +220,7 @@ async def check_military_groups(roblox_user_id: int):
         for kw in MILITARY_KEYWORDS:
             if kw in name_lower:
                 military_found.append(group_name)
-                break  # Aynı grubu iki kez ekleme
+                break
 
     if military_found:
         return ("found", military_found)
@@ -324,7 +310,6 @@ def build_age_bar(total_days: int) -> str:
 async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
     await interaction.response.defer(ephemeral=False)
 
-    # ── 1. YETKİ KONTROLÜ ───────────────────────────────────────
     if not has_required_rank(interaction.user):
         rol_debug = debug_roles(interaction.user)
         embed = discord.Embed(
@@ -341,7 +326,6 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
-    # ── 2. VERİFY KONTROLÜ ──────────────────────────────────────
     target_id = kullanici.id
     if target_id not in user_roblox_map:
         embed = discord.Embed(
@@ -359,13 +343,11 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         await interaction.followup.send(embed=embed)
         return
 
-    # ── 3. BİLGİLERİ ÇEK ───────────────────────────────────────
     data = user_roblox_map[target_id]
     roblox_id       = data["roblox_id"]
     roblox_username = data["roblox_username"]
     current_rank    = data.get("current_rank_name") or "Grupta Değil"
 
-    # Roblox API ve askeri grup kontrolünü paralel çalıştır
     info, mil_result = await asyncio.gather(
         get_roblox_full_info(roblox_id),
         check_military_groups(roblox_id)
@@ -373,7 +355,6 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
 
     mil_status, mil_groups = mil_result
 
-    # Hesap yaşı hesapla
     created_dt, total_days, years, months, days_rem = calculate_age(info["created"] or "")
     age_bar_str, age_label, embed_color = age_tier(total_days)
     progress_bar = build_age_bar(total_days)
@@ -385,47 +366,31 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         created_fmt = "Bilinmiyor"
         created_ts  = "Bilinmiyor"
 
-    # Yaş yazısı
     age_parts = []
     if years  > 0: age_parts.append(f"{years} yıl")
     if months > 0: age_parts.append(f"{months} ay")
     if days_rem > 0 or not age_parts: age_parts.append(f"{days_rem} gün")
     age_str = " · ".join(age_parts)
 
-    # ── Askeri grup alanı metni ──────────────────────────────────
     if mil_status == "hidden":
         mil_field_value = "🔒 Kullanıcı topluluklarını gizlemiş"
     elif mil_status == "found":
-        # Kırmızı kalın yazı için Discord'da kırmızı embed rengi + uyarı sembolü kullanıyoruz.
-        # Discord mesaj formatlama kırmızı renk desteklemez; sembol + embed üst rengini kırmızıya çekiyoruz.
-        group_list = ", ".join(mil_groups[:5])  # max 5 grup göster
+        group_list = ", ".join(mil_groups[:5])
         mil_field_value = f"⚠️ **EVET VAR** — `{group_list}`"
-        embed_color = 0xFF2222  # Embed rengini kırmızıya çek
+        embed_color = 0xFF2222
     else:
         mil_field_value = "✅ Hayır, yok."
 
-    # ── 4. EMBED OLUŞTUR (YENİ TASARIM) ────────────────────────
-    embed = discord.Embed(
-        color=embed_color,
-        timestamp=datetime.now(timezone.utc)
-    )
+    embed = discord.Embed(color=embed_color, timestamp=datetime.now(timezone.utc))
 
-    # Sol tarafta BÜYÜK profil fotoğrafı — Discord'da "image" sol-alt köşeye,
-    # "thumbnail" sağ-üst köşeye gider. Büyük fotoğraf için set_image kullanıyoruz
-    # ama önce thumbnail ile büyük bir görsel effect yaratıyoruz.
-    # Discord embed'de gerçek "sol büyük" düzeni yoktur; en yakın yöntem:
-    # thumbnail (sağ üst, görece büyük) + başlık solda
     if info["avatar_url"]:
         embed.set_thumbnail(url=info["avatar_url"])
 
-    # BAŞLIK — Kullanıcı adı
     display_part = f" `›` {info['display_name']}" if info['display_name'] != roblox_username else ""
     embed.title = f"🪖 {roblox_username}{display_part}"
 
-    # Banlı uyarısı
     ban_line = "\n> ⚠️ **BU HESAP ROBLOX TARAFINDAN BANLANMIŞTIR!**\n" if info["is_banned"] else ""
 
-    # Hesap yaşı — başlığın hemen altında
     embed.description = (
         f"{ban_line}"
         f"**Hesap Yaşı:** {age_str}  {age_bar_str}\n"
@@ -434,7 +399,6 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         f"**Başka asker gruplarında var mı:** {mil_field_value}"
     )
 
-    # ROBLOX KİMLİĞİ (inline — sol sütun)
     embed.add_field(
         name="👤 Roblox Kimliği",
         value=(
@@ -447,7 +411,6 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         inline=True
     )
 
-    # GRUP & DISCORD (inline — sağ sütun)
     embed.add_field(
         name="🎖️ Grup & Discord",
         value=(
@@ -458,10 +421,8 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         inline=True
     )
 
-    # Boş sütun (3'lü grid için hizalama)
     embed.add_field(name="\u200b", value="\u200b", inline=True)
 
-    # SORGULAYAN YETKİLİ
     invoker_rank = get_member_rank_name(interaction.user)
     embed.add_field(
         name="🔎 Sorgulayan Yetkili",
@@ -482,7 +443,6 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
         icon_url=kullanici.display_avatar.url
     )
 
-    # ── 5. GÖNDER ────────────────────────────────────────────────
     view = KontrolView(
         roblox_username=roblox_username,
         roblox_id=roblox_id,
@@ -535,6 +495,62 @@ class KontrolView(discord.ui.View):
         )
 
 
+# ==================== VERİFY DURDURMA VIEW ====================
+class VerifyView(discord.ui.View):
+    """
+    /verify komutunun ephemeral mesajına eklenen view.
+    Kullanıcı 'Doğrulamayı Durdur' butonuna basarsa pending_verifications'dan
+    kaydı silinir ve wait_for_result görevi bir sonraki döngüde 'iptal edildi'
+    durumunu fark ederek durur.
+    """
+    def __init__(self, discord_id: int, roblox_username: str):
+        super().__init__(timeout=300)  # 5 dakika
+        self.discord_id = discord_id
+        self.roblox_username = roblox_username
+        self.cancelled = False
+
+        # Roblox oyun linki butonu
+        self.add_item(discord.ui.Button(
+            label="Roblox Oyununa Git",
+            emoji="🎮",
+            style=discord.ButtonStyle.link,
+            url="https://www.roblox.com/tr/games/130926747712224/TTC-I-Verify"
+        ))
+
+    @discord.ui.button(label="Doğrulamayı Durdur", emoji="🛑", style=discord.ButtonStyle.danger, row=1)
+    async def cancel_verify(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Sadece kendi doğrulamasını iptal edebilir
+        if interaction.user.id != self.discord_id:
+            await interaction.response.send_message("⛔ Bu buton sana ait değil!", ephemeral=True)
+            return
+
+        if self.discord_id not in pending_verifications:
+            await interaction.response.send_message(
+                "ℹ️ Doğrulama zaten tamamlanmış veya daha önce iptal edilmiş.",
+                ephemeral=True
+            )
+            self.stop()
+            return
+
+        # Pending listesinden sil
+        data = pending_verifications.pop(self.discord_id, None)
+        self.cancelled = True
+
+        # Butonu devre dışı bırak
+        button.disabled = True
+        button.label = "İptal Edildi"
+        await interaction.response.edit_message(
+            content=(
+                f"🛑 **Doğrulama iptal edildi.**\n"
+                f"Roblox hesabı: **{self.roblox_username}**\n\n"
+                f"> Yanlış hesap yazdıysanız `/verify` ile tekrar başlayabilirsiniz."
+            ),
+            view=self
+        )
+        self.stop()
+        print(f"[Bot] 🛑 {interaction.user} doğrulamayı iptal etti ({self.roblox_username})")
+
+
 # ==================== DISCORD BOT ====================
 @bot.event
 async def on_ready():
@@ -564,16 +580,31 @@ async def verify(interaction: discord.Interaction, roblox_kullanici_adi: str):
     discord_id = interaction.user.id
     discord_username = str(interaction.user)
 
+    # ── Kalıcı liste kontrolü ──────────────────────────────────
+    # verified_data.json'dan yüklenen verified_users seti bot yeniden başlasa
+    # bile dolu gelir; aşağıdaki kontrol her zaman çalışır.
     if discord_id in verified_users:
-        await interaction.followup.send("⛔ Bu Discord hesabı zaten doğrulanmış!", ephemeral=True)
+        await interaction.followup.send(
+            "⛔ Bu Discord hesabı zaten doğrulanmış!\n"
+            "> Eğer hesabını değiştirmek istiyorsan bir yetkiliyle iletişime geç.",
+            ephemeral=True
+        )
         return
 
     if roblox_kullanici_adi.lower() in verified_roblox:
-        await interaction.followup.send(f"⛔ **{roblox_kullanici_adi}** zaten başkası tarafından doğrulanmış!", ephemeral=True)
+        await interaction.followup.send(
+            f"⛔ **{roblox_kullanici_adi}** Roblox hesabı zaten başkası tarafından doğrulanmış!\n"
+            "> Başka bir hesap dene ya da yetkililere başvur.",
+            ephemeral=True
+        )
         return
 
     if discord_id in pending_verifications:
-        await interaction.followup.send("⏳ Zaten bekleyen bir doğrulaman var!", ephemeral=True)
+        await interaction.followup.send(
+            "⏳ Zaten bekleyen bir doğrulaman var!\n"
+            "> İptal etmek için önceki mesajdaki **Doğrulamayı Durdur** butonuna bas.",
+            ephemeral=True
+        )
         return
 
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -583,14 +614,62 @@ async def verify(interaction: discord.Interaction, roblox_kullanici_adi: str):
         "code": code
     }
 
-    print(f"[Bot] Verify baslatildi: {discord_username} -> {roblox_kullanici_adi}")
+    print(f"[Bot] Verify başlatıldı: {discord_username} -> {roblox_kullanici_adi}")
+
+    # ── DM bildirimi ───────────────────────────────────────────
+    try:
+        dm_embed = discord.Embed(
+            title="🔐 Doğrulama Başlatıldı",
+            description=(
+                f"Merhaba **{interaction.user.display_name}**!\n\n"
+                f"**{roblox_kullanici_adi}** Roblox hesabın için doğrulama süreci başlatıldı.\n\n"
+                f"**Ne yapmalısın?**\n"
+                f"> 1️⃣ Aşağıdaki Roblox oyununa gir\n"
+                f"> 2️⃣ Oyun içinde doğrulama ekranına gel\n"
+                f"> 3️⃣ **Evet** seçeneğini seç\n\n"
+                f"⚠️ Yanlış hesap yazdıysanız sunucudaki mesajdan **Doğrulamayı Durdur** butonuna basın."
+            ),
+            color=0x5865F2,
+            timestamp=datetime.now(timezone.utc)
+        )
+        dm_embed.add_field(
+            name="🎮 Roblox Oyunu",
+            value="[TTC-I-Verify](https://www.roblox.com/tr/games/130926747712224/TTC-I-Verify)",
+            inline=False
+        )
+        dm_embed.add_field(name="👤 Roblox Hesabı", value=f"`{roblox_kullanici_adi}`", inline=True)
+        dm_embed.add_field(name="⏰ Süre", value="5 dakika", inline=True)
+        dm_embed.set_footer(text="TTC Doğrulama Sistemi")
+        dm_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+        await interaction.user.send(embed=dm_embed)
+        print(f"[Bot] 📨 DM gönderildi: {discord_username}")
+    except discord.Forbidden:
+        # Kullanıcı DM'leri kapalıysa sessizce geç
+        print(f"[Bot] ⚠️ DM gönderilemedi (kapalı): {discord_username}")
+    except Exception as e:
+        print(f"[Bot] ❌ DM hatası: {e}")
+
+    # ── Verify view (durdur butonu + oyun linki) ───────────────
+    view = VerifyView(discord_id=discord_id, roblox_username=roblox_kullanici_adi)
 
     await interaction.followup.send(
-        f"🔍 **{roblox_kullanici_adi}** için doğrulama bekleniyor... Roblox oyununa gir! Roblox oyunu: https://www.roblox.com/tr/games/130926747712224/TTC-I-Verify",
+        embed=discord.Embed(
+            title="⏳ Doğrulama Bekleniyor",
+            description=(
+                f"**Roblox Hesabı:** `{roblox_kullanici_adi}`\n\n"
+                f"Roblox oyununa gir ve doğrulama ekranında **Evet**'e bas.\n\n"
+                f"> ⚠️ Yanlış hesap yazdıysanız aşağıdaki **Doğrulamayı Durdur** butonuna basın."
+            ),
+            color=0xFFCC00,
+            timestamp=datetime.now(timezone.utc)
+        ),
+        view=view,
         ephemeral=True
     )
 
-    asyncio.create_task(wait_for_result(interaction, discord_id, roblox_kullanici_adi, code))
+    asyncio.create_task(wait_for_result(interaction, discord_id, roblox_kullanici_adi, code, view))
+
 
 async def apply_group_role(member: discord.Member, roblox_user_id: int, roblox_username: str, old_rank_name: str = None):
     guild = bot.get_guild(SUNUCU_ID)
@@ -623,14 +702,26 @@ async def apply_group_role(member: discord.Member, roblox_user_id: int, roblox_u
 
     return rank_name
 
-async def wait_for_result(interaction, discord_id, roblox_username, code):
+
+async def wait_for_result(interaction, discord_id, roblox_username, code, verify_view: VerifyView = None):
     for _ in range(300):
         await asyncio.sleep(1)
+
+        # ── İptal kontrolü ─────────────────────────────────────
+        # Kullanıcı butona bastıysa pending'den silindi; kod da artık yok.
+        if discord_id not in pending_verifications:
+            # Eğer verified_results'ta da yoksa kullanıcı iptal etti
+            if code not in verified_results:
+                print(f"[Bot] 🛑 wait_for_result: {roblox_username} iptal nedeniyle durdu")
+                return
 
         if code in verified_results:
             result_data = verified_results.pop(code)
             pending_verifications.pop(discord_id, None)
             result = result_data["result"]
+
+            if verify_view:
+                verify_view.stop()
 
             if result == "yes":
                 guild = bot.get_guild(SUNUCU_ID)
@@ -674,17 +765,71 @@ async def wait_for_result(interaction, discord_id, roblox_username, code):
                     }
                     veriyi_kaydet()
 
+                    # ── Başarı DM'i ────────────────────────────────────
+                    try:
+                        success_embed = discord.Embed(
+                            title="✅ Doğrulama Başarılı!",
+                            description=(
+                                f"**{roblox_username}** Roblox hesabın başarıyla doğrulandı!\n\n"
+                                f"Artık sunucuya tam erişimin var. Hoş geldin! 🎉"
+                            ),
+                            color=0x00BB77,
+                            timestamp=datetime.now(timezone.utc)
+                        )
+                        success_embed.set_footer(text="TTC Doğrulama Sistemi")
+                        await member.send(embed=success_embed)
+                    except Exception:
+                        pass
+
                 await interaction.followup.send(
                     f"✅ **{interaction.user.mention}** başarıyla doğrulandı! Roblox adı: **{roblox_username}**"
                 )
             else:
+                # ── Başarısız DM'i ─────────────────────────────────
+                try:
+                    fail_embed = discord.Embed(
+                        title="❌ Doğrulama Başarısız",
+                        description=(
+                            f"**{roblox_username}** hesabı için doğrulama reddedildi.\n\n"
+                            f"> Oyun içinde **Hayır** seçeneğini seçtiniz.\n"
+                            f"> Tekrar denemek için `/verify` komutunu kullanabilirsiniz."
+                        ),
+                        color=0xFF2222,
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                    fail_embed.set_footer(text="TTC Doğrulama Sistemi")
+                    await interaction.user.send(embed=fail_embed)
+                except Exception:
+                    pass
+
                 await interaction.followup.send(
-                    f"❌ **{interaction.user.mention}** doğrulaması başarısız! Kullanıcı hayırı seçti."
+                    f"❌ **{interaction.user.mention}** doğrulaması başarısız! Kullanıcı hayırı seçti.",
+                    ephemeral=True
                 )
             return
 
+    # ── Zaman aşımı ────────────────────────────────────────────
     pending_verifications.pop(discord_id, None)
+    if verify_view:
+        verify_view.stop()
+
+    try:
+        timeout_embed = discord.Embed(
+            title="⏰ Doğrulama Süresi Doldu",
+            description=(
+                f"**{roblox_username}** hesabı için doğrulama 5 dakika içinde tamamlanamadı.\n\n"
+                f"> Tekrar denemek için `/verify` komutunu kullanabilirsiniz."
+            ),
+            color=0xFF8800,
+            timestamp=datetime.now(timezone.utc)
+        )
+        timeout_embed.set_footer(text="TTC Doğrulama Sistemi")
+        await interaction.user.send(embed=timeout_embed)
+    except Exception:
+        pass
+
     await interaction.followup.send("⏰ Zaman aşımı! Tekrar dene.", ephemeral=True)
+
 
 async def rank_check_loop():
     await bot.wait_until_ready()
