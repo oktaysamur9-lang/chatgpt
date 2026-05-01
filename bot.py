@@ -282,21 +282,7 @@ def calculate_age(created_iso: str):
     except Exception:
         return None, 0, 0, 0, 0
 
-def age_tier(total_days: int):
-    if total_days < 30:
-        return ("🔴🔴🔴🔴🔴", "ŞÜPHELI — Çok Yeni", 0xFF2222)
-    elif total_days < 90:
-        return ("🟠🟠🟠🟠⬜", "DİKKAT — Yeni Hesap", 0xFF8800)
-    elif total_days < 180:
-        return ("🟡🟡🟡⬜⬜", "ORTA — Gelişmekte", 0xFFCC00)
-    elif total_days < 365:
-        return ("🟢🟢🟢🟢⬜", "İYİ — 6+ Aylık", 0x44CC44)
-    elif total_days < 365 * 2:
-        return ("🟢🟢🟢🟢🟢", "GÜVENLI — 1+ Yıllık", 0x00BB77)
-    elif total_days < 365 * 4:
-        return ("💎💎💎💎💎", "VETERAN — 2+ Yıllık", 0x00BFFF)
-    else:
-        return ("👑👑👑👑👑", "EFSANEVİ — 4+ Yıllık", 0xFFD700)
+
 
 def build_age_bar(total_days: int) -> str:
     max_days = 365 * 5
@@ -311,36 +297,12 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
     await interaction.response.defer(ephemeral=False)
 
     if not has_required_rank(interaction.user):
-        rol_debug = debug_roles(interaction.user)
-        embed = discord.Embed(
-            title="⛔  ERİŞİM REDDEDİLDİ",
-            description=(
-                "Bu dosyaya erişim yetkiniz bulunmamaktadır.\n"
-                f"Minimum gereklilik: **OF-{KONTROL_MIN_OF_LEVEL}** veya üzeri rütbe.\n\n"
-                f"**Rollerinizin algılanma durumu:**\n{rol_debug}"
-            ),
-            color=0xFF2222,
-            timestamp=datetime.now(timezone.utc)
-        )
-        embed.set_footer(text="Erişim Günlüğü Kaydedildi — Rol adı OF-X formatında değilse bot algılayamaz")
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send("⛔ Bu komutu kullanmak için yetkin yok.", ephemeral=True)
         return
 
     target_id = kullanici.id
     if target_id not in user_roblox_map:
-        embed = discord.Embed(
-            title="🔍  KAYIT BULUNAMADI",
-            description=(
-                f"**{kullanici.display_name}** adlı kullanıcı sisteme kayıtlı değil.\n\n"
-                f"> Bu kişi ya hiç doğrulama yapmamış,\n"
-                f"> ya da başka bir hesapla giriş yapmış olabilir."
-            ),
-            color=0xFF6600,
-            timestamp=datetime.now(timezone.utc)
-        )
-        embed.set_thumbnail(url=kullanici.display_avatar.url)
-        embed.set_footer(text=f"Sorgulayan: {interaction.user} • {get_member_rank_name(interaction.user)}")
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(f"**{kullanici.display_name}** sisteme kayıtlı değil.", ephemeral=True)
         return
 
     data = user_roblox_map[target_id]
@@ -355,101 +317,40 @@ async def kontrol(interaction: discord.Interaction, kullanici: discord.Member):
 
     mil_status, mil_groups = mil_result
 
-    created_dt, total_days, years, months, days_rem = calculate_age(info["created"] or "")
-    age_bar_str, age_label, embed_color = age_tier(total_days)
-    progress_bar = build_age_bar(total_days)
+    created_dt, total_days, _, _, _ = calculate_age(info["created"] or "")
 
-    if created_dt:
-        created_fmt = created_dt.strftime("%d %B %Y")
-        created_ts  = f"<t:{int(created_dt.timestamp())}:D>"
-    else:
-        created_fmt = "Bilinmiyor"
-        created_ts  = "Bilinmiyor"
-
-    age_parts = []
-    if years  > 0: age_parts.append(f"{years} yıl")
-    if months > 0: age_parts.append(f"{months} ay")
-    if days_rem > 0 or not age_parts: age_parts.append(f"{days_rem} gün")
-    age_str = " · ".join(age_parts)
+    age_str = f"{total_days:,} gün"
+    created_ts = f"<t:{int(created_dt.timestamp())}:D>" if created_dt else "Bilinmiyor"
 
     if mil_status == "hidden":
-        mil_field_value = "🔒 Kullanıcı topluluklarını gizlemiş"
+        mil_field_value = "Gizlenmiş"
     elif mil_status == "found":
         group_list = ", ".join(mil_groups[:5])
-        mil_field_value = f"⚠️ **EVET VAR** — `{group_list}`"
-        embed_color = 0xFF2222
+        mil_field_value = f"Evet — {group_list}"
     else:
-        mil_field_value = "✅ Hayır, yok."
+        mil_field_value = "Hayır"
 
-    embed = discord.Embed(color=embed_color, timestamp=datetime.now(timezone.utc))
+    ban_line = "> ⚠️ Bu hesap Roblox tarafından banlanmıştır!\n\n" if info["is_banned"] else ""
+
+    embed = discord.Embed(timestamp=datetime.now(timezone.utc))
+    embed.title = roblox_username
 
     if info["avatar_url"]:
         embed.set_thumbnail(url=info["avatar_url"])
 
-    display_part = f" `›` {info['display_name']}" if info['display_name'] != roblox_username else ""
-    embed.title = f"🪖 {roblox_username}{display_part}"
-
-    ban_line = "\n> ⚠️ **BU HESAP ROBLOX TARAFINDAN BANLANMIŞTIR!**\n" if info["is_banned"] else ""
-
     embed.description = (
         f"{ban_line}"
-        f"**Hesap Yaşı:** {age_str}  {age_bar_str}\n"
-        f"{progress_bar} `{age_label}`\n"
-        f"**Kayıt Tarihi:** {created_ts}\n\n"
-        f"**Başka asker gruplarında var mı:** {mil_field_value}"
+        f"**Hesap Yaşı:** {age_str}\n"
+        f"**Kayıt Tarihi:** {created_ts}\n"
+        f"**Grup Rütbesi:** {current_rank}\n"
+        f"**Asker Grubu:** {mil_field_value}\n\n"
+        f"**Discord:** {kullanici.display_name} (`{kullanici}`)\n"
+        f"**Roblox ID:** `{roblox_id}`"
     )
 
-    embed.add_field(
-        name="👤 Roblox Kimliği",
-        value=(
-            f"**Kullanıcı:** {info['username']}\n"
-            f"**Görünen Ad:** {info['display_name']}\n"
-            f"**ID:** `{roblox_id}`\n"
-            f"**Arkadaş:** {info['friend_count']:,}\n"
-            f"**Durum:** {'❌ Banlı' if info['is_banned'] else '✅ Aktif'}"
-        ),
-        inline=True
-    )
+    embed.set_footer(text=f"Sorgulayan: {interaction.user.display_name} • {get_member_rank_name(interaction.user)}")
 
-    embed.add_field(
-        name="🎖️ Grup & Discord",
-        value=(
-            f"**Grup Rütbesi:** {current_rank}\n"
-            f"**Discord:** {kullanici.display_name}\n"
-            f"**Tag:** `{kullanici}`"
-        ),
-        inline=True
-    )
-
-    embed.add_field(name="\u200b", value="\u200b", inline=True)
-
-    invoker_rank = get_member_rank_name(interaction.user)
-    embed.add_field(
-        name="🔎 Sorgulayan Yetkili",
-        value=(
-            f"**İsim:** {interaction.user.display_name}\n"
-            f"**Rütbe:** {invoker_rank}"
-        ),
-        inline=True
-    )
-
-    embed.set_author(
-        name="📂 PERSONİK DOSYA · GİZLİ",
-        icon_url="https://i.imgur.com/4M34hi2.png"
-    )
-
-    embed.set_footer(
-        text=f"TTC Personik Kayıt Sistemi · Roblox ID: {roblox_id}",
-        icon_url=kullanici.display_avatar.url
-    )
-
-    view = KontrolView(
-        roblox_username=roblox_username,
-        roblox_id=roblox_id,
-        discord_user=kullanici
-    )
-    await interaction.followup.send(embed=embed, view=view)
-
+    await interaction.followup.send(embed=embed)
 
 # ── BUTONLU VIEW ──────────────────────────────────────────────────
 class KontrolView(discord.ui.View):
