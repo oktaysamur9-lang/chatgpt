@@ -73,6 +73,24 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ==================== FLASK ====================
 app = Flask(__name__)
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+@app.before_request
+def log_request():
+    print(f"[Flask] 📥 {request.method} {request.path} — port: {app._got_first_request}")
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    port = int(os.environ.get("PORT", "YOK"))
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "YOK")
+    return jsonify({
+        "status": "ok",
+        "port": port,
+        "domain": railway_domain,
+        "message": "Flask çalışıyor!"
+    })
+
 @app.route('/get_pending', methods=['GET'])
 def get_pending():
     username = request.args.get("username", "").lower()
@@ -98,13 +116,14 @@ def verify_response():
     
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
+    print(f"🔧 PORT env değeri: {os.environ.get('PORT', 'TANIMSIZ')}")
+    print(f"🔧 Flask {port} portunda başlıyor...")
     
     railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     if railway_url:
         print(f"🌐 Public URL: https://{railway_url}")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-    
 # ==================== ROBLOX API ====================
 async def get_roblox_user_id(username: str):
     async with aiohttp.ClientSession() as session:
