@@ -100,7 +100,7 @@ def run_flask():
     from pyngrok import ngrok
     port = int(os.environ.get("PORT", 5000))
     
-    ngrok_token = os.environ.get("NGROK_TOKEN")
+    ngrok_token = os.environ.get("35Nu8Mgi5cxP2RkCWW11WcfcEZ7_3mpr9YpDT7QaM2dnmfKTw")
     if ngrok_token:
         ngrok.set_auth_token(ngrok_token)
     
