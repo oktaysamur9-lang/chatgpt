@@ -95,17 +95,16 @@ def verify_response():
         return jsonify({"status": "error"}), 400
     verified_results[code] = {"result": result, "roblox_username": roblox_username}
     return jsonify({"status": "ok"})
-
+    
 def run_flask():
-    from pyngrok import ngrok
     port = int(os.environ.get("PORT", 5000))
     
-    ngrok_token = os.environ.get("NGROK_TOKEN")
-    if ngrok_token:
-        ngrok.set_auth_token(ngrok_token)
-    
-    tunnel = ngrok.connect(port)
-    print(f"🌐 ngrok URL: {tunnel.public_url}")
+    # Railway otomatik public URL verir
+    railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    if railway_url:
+        print(f"🌐 Public URL: https://{railway_url}")
+    else:
+        print(f"🌐 Local: http://0.0.0.0:{port}")
     
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
     
